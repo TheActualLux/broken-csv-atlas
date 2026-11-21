@@ -12,6 +12,8 @@ export function run(input) {
   let line = 1;
   let recordLine = 1;
   let recordRow = null;
+  let fieldEnded = 0;
+  let fieldAdded = 0;
 
   function addError(code) {
     errors.push({ code, line: recordLine, row: recordRow });
@@ -47,16 +49,18 @@ export function run(input) {
         const value = prefix.length === 0 ? suffix : (suffix.length === 0 ? prefix : prefix + suffix);
         if (c === 44) {
           pos++;
-          return { value, ended: 1, added };
-        }
-        if (c === 10) {
+          fieldEnded = 1;
+        } else if (c === 10) {
           pos++;
           line++;
-          return { value, ended: 2, added };
+          fieldEnded = 2;
+        } else {
+          pos += 2;
+          line++;
+          fieldEnded = 2;
         }
-        pos += 2;
-        line++;
-        return { value, ended: 2, added };
+        fieldAdded = added;
+        return value;
       }
       pos++;
     }
@@ -69,11 +73,9 @@ export function run(input) {
       if (pos > start) pieces.push(text.slice(start, pos));
       suffix = pieces.join('');
     }
-    return {
-      value: prefix.length === 0 ? suffix : (suffix.length === 0 ? prefix : prefix + suffix),
-      ended: 0,
-      added,
-    };
+    fieldEnded = 0;
+    fieldAdded = added;
+    return prefix.length === 0 ? suffix : (suffix.length === 0 ? prefix : prefix + suffix);
   }
 
   function readQuoted() {
@@ -126,27 +128,37 @@ export function run(input) {
       return readUnquoted('"');
     }
 
-    if (pos >= text.length) return { value, ended: 0 };
+    if (pos >= text.length) {
+      fieldEnded = 0;
+      fieldAdded = 0;
+      return value;
+    }
     const next = text.charCodeAt(pos);
     if (next === 44) {
       pos++;
-      return { value, ended: 1 };
+      fieldEnded = 1;
+      fieldAdded = 0;
+      return value;
     }
     if (next === 10) {
       pos++;
       line++;
-      return { value, ended: 2 };
+      fieldEnded = 2;
+      fieldAdded = 0;
+      return value;
     }
     if (next === 13 && text.charCodeAt(pos + 1) === 10) {
       pos += 2;
       line++;
-      return { value, ended: 2 };
+      fieldEnded = 2;
+      fieldAdded = 0;
+      return value;
     }
 
     // Text after the closing quote is retained literally through the next
     // delimiter. quote_junk is based on retained characters, not dropped CRs.
     const junk = readUnquoted(value);
-    if (junk.added > 0) addError('quote_junk');
+    if (fieldAdded > 0) addError('quote_junk');
     return junk;
   }
 
@@ -167,13 +179,13 @@ export function run(input) {
     recordLine = line;
     recordRow = hasHeader && columns === null ? null : rows.length;
     const fields = [];
-    let field;
     let quoted;
+    let fieldValue;
     do {
       quoted = text.charCodeAt(pos) === 34;
-      field = quoted ? readQuoted() : readUnquoted();
-      fields.push(field.value);
-    } while (field.ended === 1);
+      fieldValue = quoted ? readQuoted() : readUnquoted();
+      fields.push(fieldValue);
+    } while (fieldEnded === 1);
 
     // A line consisting only of discarded lone CRs has no record.
     if (fields.length === 1 && fields[0] === '' && !quoted) continue;
